@@ -157,6 +157,7 @@ def main(opt, device_id):
     logger.info(' * tgt vocab size = %d' % len(vocabs['tgt']))
     # Build optimizer.
     optim = Optimizer.from_opt(model, opt, checkpoint=checkpoint)
+    print(f"{optim.state_dict() = }")
 
     # Build model saver
     model_saver = build_model_saver(model_opt, opt, model, vocabs, optim)

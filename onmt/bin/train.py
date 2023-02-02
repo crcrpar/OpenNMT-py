@@ -62,6 +62,7 @@ def main():
     parser = _get_parser()
 
     opt, unknown = parser.parse_known_args()
+    print(f"{opt.fused = }")
     train(opt)
 
 

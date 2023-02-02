@@ -617,6 +617,7 @@ def _add_train_general_opts(parser):
               help="Step for moving average. "
                    "Default is every update, "
                    "if -average_decay is set.")
+    group.add("--fused", default=False, help="Enable fused?")
 
     # learning rate
     group = parser.add_argument_group('Optimization- Rate')
