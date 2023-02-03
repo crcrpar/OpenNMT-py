@@ -20,12 +20,12 @@ data:
 
 save_model: /mkozuki/data/opennmt_out_adam
 save_checkpoint_steps: 10000
-keep_checkpoint: 10
+keep_checkpoint: 20
 seed: 3435
-train_steps: 1000
+train_steps: 20
 valid_steps: 1000
 warmup_steps: 8000
-report_every: 100
+report_every: 5
 
 decoder_type: transformer
 encoder_type: transformer
@@ -43,7 +43,7 @@ adam_beta2: 0.998
 decay_method: noam
 learning_rate: 2.0
 max_grad_norm: 0.0
-fused: False
+fused: ''
 
 batch_size: 4096
 batch_type: tokens
