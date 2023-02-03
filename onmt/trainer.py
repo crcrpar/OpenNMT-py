@@ -273,8 +273,11 @@ class Trainer(object):
         # Let's clean the GPUs before training loop
         torch.cuda.empty_cache()
 
+        torch.cuda.cudart().cudaProfilerStart()
+
         for i, (batches, normalization) in enumerate(
                 self._accum_batches(train_iter)):
+            torch.cuda.nvtx.range_push(f"Iter{i}")
             step = self.optim.training_step
             # UPDATE DROPOUT
             self._maybe_update_dropout(step)
@@ -298,8 +301,12 @@ class Trainer(object):
 
             if (valid_iter is not None and step % valid_steps == 0 and
                     self.gpu_rank <= 0):
+                torch.cuda.nvtx.range_push("validation")
                 valid_stats = self.validate(
                     valid_iter, moving_average=self.moving_average)
+                torch.cuda.nvtx.range_pop()
+
+            torch.cuda.nvtx.range_pop()  # Iter range
 
             if step % valid_steps == 0 and self.gpu_rank <= 0:
                 self._report_step(self.optim.learning_rate(),
@@ -360,11 +367,15 @@ class Trainer(object):
                     transformed_batches.append(transformed_batch)
                 with torch.cuda.amp.autocast(enabled=self.optim.amp):
                     # F-prop through the model.
+                    torch.cuda.nvtx.range_push("fwd")
                     model_out, attns = valid_model(src, tgt, src_len,
                                                    with_align=self.with_align)
+                    torch.cuda.nvtx.range_pop()
 
                     # Compute loss.
+                    torch.cuda.nvtx.range_push("loss")
                     _, batch_stats = self.valid_loss(batch, model_out, attns)
+                    torch.cuda.nvtx.range_pop()
 
                     stats.update(batch_stats)
             logger.info("""valid stats calculation and sentences rebuilding
@@ -423,6 +434,7 @@ class Trainer(object):
             self.optim.zero_grad(set_to_none=True)
 
         for k, batch in enumerate(true_batches):
+            torch.cuda.nvtx.range_push(f"batch {k}")
             target_size = batch['tgt'].size(1)
             # Truncated BPTT: reminder not compatible with accum > 1
             if self.trunc_size:
@@ -450,18 +462,22 @@ class Trainer(object):
 
                 try:
                     with torch.cuda.amp.autocast(enabled=self.optim.amp):
+                        torch.cuda.nvtx.range_push("FWD")
                         model_out, attns = self.model(
                             src, tgt, src_len, bptt=bptt,
                             with_align=self.with_align)
+                        torch.cuda.nvtx.range_pop()
                         bptt = True
 
                         # 3. Compute loss.
+                        torch.cuda.nvtx.range_push("loss")
                         loss, batch_stats = self.train_loss(
                             batch,
                             model_out,
                             attns,
                             trunc_start=j,
                             trunc_size=trunc_size)
+                        torch.cuda.nvtx.range_pop()
 
                     step = self.optim.training_step
                     if (
@@ -498,7 +514,9 @@ class Trainer(object):
                         # in theory we should divide by accum_count and bptt
                         # to rescale for each sub batch
                         loss /= normalization
+                        torch.cuda.nvtx.range_push("BWD")
                         self.optim.backward(loss)
+                        torch.cuda.nvtx.range_pop()
 
                     total_stats.update(batch_stats)
                     report_stats.update(batch_stats)
@@ -527,6 +545,7 @@ class Trainer(object):
                 # If truncated, don't backprop fully.
                 if self.model.decoder.state != {}:
                     self.model.decoder.detach_state()
+            torch.cuda.nvtx.range_pop()
 
         # in case of multi step gradient accumulation,
         # update only after accum batches
@@ -537,7 +556,9 @@ class Trainer(object):
                          and p.grad is not None]
                 onmt.utils.distributed.all_reduce_and_rescale_tensors(
                     grads, float(self.n_gpu))
+            torch.cuda.nvtx.range_push("optimizer.step")
             self.optim.step()
+            torch.cuda.nvtx.range_pop()
 
     def _start_report_manager(self, start_time=None):
         """
